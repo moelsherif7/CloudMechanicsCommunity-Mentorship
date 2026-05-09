@@ -1,0 +1,296 @@
+openapi: 3.0.3
+info:
+  title: Microsoft Partner Center Incentives API (claims subset)
+  version: "1.0"
+  description: |
+    Subset of the Microsoft Partner Center Incentives REST surface used by the
+    Partner Center Incentive Claims Assistant declarative agent.
+
+    Authentication: Microsoft Entra ID OAuth 2.0 authorization-code flow
+    (delegated). The signed-in user must hold an Incentive admin or Incentive
+    user role in Partner Center for the partner organization.
+
+    NOTE: The Partner Center Incentives REST surface for engagement/co-op
+    claims is partner-distribution and the exact endpoint paths and field
+    names below should be verified against the documentation that Microsoft
+    provides to your partner organization. Adjust paths, query parameters,
+    and response shapes to match what your tenant returns.
+servers:
+  - url: https://api.partner.microsoft.com/v1.0/incentives
+    description: Partner Center Incentives production endpoint
+security:
+  - entraDelegated:
+      - https://api.partner.microsoft.com/.default
+paths:
+  /programs:
+    get:
+      operationId: listIncentivePrograms
+      summary: List incentive programs the partner is enrolled in
+      parameters:
+        - in: query
+          name: fiscalYear
+          required: false
+          schema:
+            type: string
+            example: FY26
+          description: Microsoft fiscal year filter (e.g. FY25, FY26).
+      responses:
+        "200":
+          description: A page of incentive programs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /engagements:
+    get:
+      operationId: listEngagements
+      summary: List engagements (workshops/activities) for a program
+      parameters:
+        - in: query
+          name: programId
+          required: false
+          schema:
+            type: string
+          description: Filter engagements to a specific program.
+        - in: query
+          name: fiscalYear
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A page of engagements.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngagementList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /claims:
+    get:
+      operationId: listClaims
+      summary: List incentive claims, optionally filtered by status, program, engagement, or date range
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum:
+              - Draft
+              - Submitted
+              - Approved
+              - ActionRequired
+              - Rejected
+              - Expired
+        - in: query
+          name: programId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: engagementId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: claimedFromDate
+          required: false
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: claimedToDate
+          required: false
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: top
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: A page of claims.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /claims/{claimId}:
+    get:
+      operationId: getClaim
+      summary: Get a single incentive claim by ID
+      parameters:
+        - in: path
+          name: claimId
+          required: true
+          schema:
+            type: string
+          description: The Partner Center incentive claim ID.
+      responses:
+        "200":
+          description: The claim.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Claim"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Claim not found.
+components:
+  securitySchemes:
+    entraDelegated:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/common/oauth2/v2.0/token
+          scopes:
+            https://api.partner.microsoft.com/.default: Access Partner Center on behalf of the signed-in user
+  responses:
+    Unauthorized:
+      description: The user is not signed in or the token is invalid.
+    Forbidden:
+      description: The user does not have an Incentive admin or Incentive user role in Partner Center.
+  schemas:
+    ProgramList:
+      type: object
+      properties:
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/Program"
+        nextLink:
+          type: string
+          nullable: true
+    Program:
+      type: object
+      properties:
+        programId:
+          type: string
+        programName:
+          type: string
+        programType:
+          type: string
+          example: MCI
+        fiscalYear:
+          type: string
+          example: FY26
+        enrollmentStatus:
+          type: string
+    EngagementList:
+      type: object
+      properties:
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/Engagement"
+        nextLink:
+          type: string
+          nullable: true
+    Engagement:
+      type: object
+      properties:
+        engagementId:
+          type: string
+        engagementName:
+          type: string
+        programId:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        eligibility:
+          type: string
+    ClaimList:
+      type: object
+      properties:
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/Claim"
+        nextLink:
+          type: string
+          nullable: true
+    Claim:
+      type: object
+      properties:
+        claimId:
+          type: string
+        programId:
+          type: string
+        programName:
+          type: string
+        engagementId:
+          type: string
+        engagementName:
+          type: string
+        status:
+          type: string
+          enum:
+            - Draft
+            - Submitted
+            - Approved
+            - ActionRequired
+            - Rejected
+            - Expired
+          description: |
+            Lifecycle of the incentive claim. Mapping to Partner Center UI labels:
+            Draft -> "Draft", Submitted -> "Submitted", Approved -> "Approved",
+            ActionRequired -> "Partner action required", Rejected -> "Rejected",
+            Expired -> "Workshop expired" (pre- or post-submission).
+        statusReason:
+          type: string
+          nullable: true
+        actionRequired:
+          type: string
+          nullable: true
+          description: Reviewer-provided summary of what the partner must do, if status is ActionRequired.
+        submittedDate:
+          type: string
+          format: date-time
+          nullable: true
+        lastUpdatedDate:
+          type: string
+          format: date-time
+        deadlineDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: Deadline by which the partner must submit (Draft) or resolve action items (ActionRequired).
+        amount:
+          type: number
+          format: double
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+          example: USD
+        customer:
+          type: object
+          nullable: true
+          properties:
+            customerId:
+              type: string
+            customerName:
+              type: string

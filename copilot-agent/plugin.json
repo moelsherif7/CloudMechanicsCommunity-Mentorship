@@ -1,0 +1,80 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/copilot/plugin/v2.3/schema.json",
+  "schema_version": "v2.3",
+  "name_for_human": "Partner Center Incentives",
+  "namespace": "partnerCenterIncentives",
+  "description_for_human": "Reads incentive engagement and co-op claim status from Microsoft Partner Center on behalf of the signed-in partner user.",
+  "description_for_model": "Plugin that calls the Microsoft Partner Center Incentives REST API (https://api.partner.microsoft.com/v1.0/incentives) using the signed-in user's delegated Entra ID token. Use it to: list incentive programs the partner is enrolled in, list engagements, list and filter incentive claims (by program, engagement, status, date range), and retrieve a single claim by ID. The API returns claim lifecycle states such as Draft, Submitted, Approved, ActionRequired, Rejected, and Expired. Use these endpoints for any user question about incentive claim status, claim history, or pending action items. Do not use this plugin for earnings/payouts statements or for tax forms.",
+  "functions": [
+    {
+      "name": "listIncentivePrograms",
+      "description": "Lists Microsoft incentive programs (for example MCI, Co-op) the signed-in partner is enrolled in. Use when the user asks which programs they participate in or wants to scope a claims query by program.",
+      "capabilities": {
+        "response_semantics": {
+          "data_path": "$.value",
+          "properties": {
+            "title": "$.programName",
+            "subtitle": "$.programId"
+          }
+        }
+      }
+    },
+    {
+      "name": "listEngagements",
+      "description": "Lists engagements (workshops, activities) under an incentive program. Use when the user asks about workshops, engagements, or wants to find an engagementId to drill into.",
+      "capabilities": {
+        "response_semantics": {
+          "data_path": "$.value",
+          "properties": {
+            "title": "$.engagementName",
+            "subtitle": "$.engagementId"
+          }
+        }
+      }
+    },
+    {
+      "name": "listClaims",
+      "description": "Lists incentive claims with optional filters: status, programId, engagementId, claimedFromDate, claimedToDate. Use this for any 'show my claims', 'action-required claims', or status-filtered claim query.",
+      "capabilities": {
+        "response_semantics": {
+          "data_path": "$.value",
+          "properties": {
+            "title": "$.claimId",
+            "subtitle": "$.status"
+          }
+        }
+      }
+    },
+    {
+      "name": "getClaim",
+      "description": "Retrieves a single incentive claim by its claimId. Use when the user provides a specific claim ID and wants its full status, history, and required actions.",
+      "capabilities": {
+        "response_semantics": {
+          "data_path": "$",
+          "properties": {
+            "title": "$.claimId",
+            "subtitle": "$.status"
+          }
+        }
+      }
+    }
+  ],
+  "runtimes": [
+    {
+      "type": "OpenApi",
+      "auth": {
+        "type": "OAuthPluginVault",
+        "reference_id": "${{OAUTH2AUTHCODE_CONFIGURATION_ID}}"
+      },
+      "spec": {
+        "url": "openapi.yaml"
+      },
+      "run_for_functions": [
+        "listIncentivePrograms",
+        "listEngagements",
+        "listClaims",
+        "getClaim"
+      ]
+    }
+  ]
+}
