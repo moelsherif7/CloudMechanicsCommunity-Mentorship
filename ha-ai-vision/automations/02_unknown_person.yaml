@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Automation 02 — Unknown Person (front door)
+# Trigger: motion → snapshot → LLM Vision → notify on UNKNOWN person.
+# Prompt source of truth: ../prompts/person.md
+# ---------------------------------------------------------------------------
+- id: ai_vision_02_unknown_person
+  alias: "AI Vision 02 — Unknown Person (front door)"
+  description: >-
+    On front-door motion, analyze a snapshot to tell an expected visitor from an
+    unfamiliar person, and notify (with snapshot) on unknown persons. Uses LLM
+    Vision Memory for known-person context. Cooldown + fallback handled by
+    script.ai_vision_analyze.
+  mode: single
+  max_exceeded: silent
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.front_door_motion
+      from: "off"
+      to: "on"
+  condition: []
+  action:
+    - service: script.ai_vision_analyze
+      data:
+        use_case: person
+        camera_entity: camera.front_door
+        notify_target: mobile_app_mohamed
+        cooldown_helper: input_datetime.front_door_last_ai
+        cooldown_minutes: 5
+        title: "Front door"
+        prompt: >-
+          You are a home security vision assistant analyzing a single snapshot
+          from a front-door camera. Determine whether a person is present and
+          whether they appear to be an expected visitor (delivery/courier/known
+          household member) or an unknown person who may warrant attention.
+          Describe only what is visible: count of people and whether they are
+          approaching, waiting, leaving, or loitering. Use any provided memory
+          context about known people; if a person matches known context, treat
+          them as known. Do NOT identify individuals by name unless memory
+          clearly supports it, and do NOT infer protected attributes.
+          OUTPUT FORMAT (MANDATORY): at most TWO sentences of plain description,
+          then exactly ONE line of compact JSON on its own line:
+          {"category":"person","present":<true|false>,"known":<true|false|null>,"confidence":"<low|medium|high>","action":"<notify|log|ignore>"}.
+          action="notify" if an UNKNOWN person is present with medium+
+          confidence OR loitering is observed; "log" for a known person or low
+          confidence; "ignore" if no person is present.

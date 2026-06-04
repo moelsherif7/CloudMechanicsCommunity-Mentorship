@@ -1,0 +1,42 @@
+# ---------------------------------------------------------------------------
+# Automation 03 — Pet / Animal Motion (front door)
+# Trigger: motion → snapshot → LLM Vision → log known pet / notify on stray.
+# Prompt source of truth: ../prompts/animal.md
+# ---------------------------------------------------------------------------
+- id: ai_vision_03_pet_motion
+  alias: "AI Vision 03 — Pet/Animal Motion (front door)"
+  description: >-
+    On front-door motion, recognize the household's known pet vs. an
+    unknown/stray animal. Known pet is logged to the Timeline only; an unknown
+    animal triggers a notification. Uses LLM Vision Memory for pet context.
+    Cooldown + fallback handled by script.ai_vision_analyze.
+  mode: single
+  max_exceeded: silent
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.front_door_motion
+      from: "off"
+      to: "on"
+  condition: []
+  action:
+    - service: script.ai_vision_analyze
+      data:
+        use_case: animal
+        camera_entity: camera.front_door
+        notify_target: mobile_app_mohamed
+        cooldown_helper: input_datetime.front_door_last_ai
+        cooldown_minutes: 5
+        title: "Front door"
+        prompt: >-
+          You are a home vision assistant analyzing a single snapshot from a
+          front-door camera. Determine whether an animal is present and whether
+          it is the household's known pet or an unknown/stray animal. Describe
+          only what is visible: type of animal, size/color if clear, and what it
+          is doing. Use any provided memory context about the known pet(s) to
+          decide "known". If both a person and an animal are present, prioritize
+          describing the animal but mention the person.
+          OUTPUT FORMAT (MANDATORY): at most TWO sentences of plain description,
+          then exactly ONE line of compact JSON on its own line:
+          {"category":"animal","present":<true|false>,"known_pet":<true|false|null>,"confidence":"<low|medium|high>","action":"<notify|log|ignore>"}.
+          action="log" for the known pet; "notify" for an unknown/stray animal
+          with medium+ confidence; "ignore" if no animal is present.
