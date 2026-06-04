@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------------------
+# Automation 04 — Room Tidiness (indoor camera)
+# Trigger: motion → snapshot → LLM Vision → notify if cluttered (score <= 2).
+# Prompt source of truth: ../prompts/tidiness.md
+#
+# NOTE: placeholders use the front-door entities so it is runnable out of the
+# box; replace camera_entity / trigger with an INDOOR camera + motion sensor
+# (e.g. camera.living_room / binary_sensor.living_room_motion) and use a
+# dedicated cooldown helper for that camera.
+# ---------------------------------------------------------------------------
+- id: ai_vision_04_room_tidiness
+  alias: "AI Vision 04 — Room Tidiness (indoor)"
+  description: >-
+    On indoor motion (cooldown-gated), assess room tidiness and send a gentle
+    notification only when the room is notably cluttered (score <= 2). All
+    assessments are logged to the Timeline for trend tracking. Cooldown +
+    fallback handled by script.ai_vision_analyze.
+  mode: single
+  max_exceeded: silent
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.front_door_motion   # replace with indoor motion
+      from: "off"
+      to: "on"
+  condition: []
+  action:
+    - service: script.ai_vision_analyze
+      data:
+        use_case: tidiness
+        camera_entity: camera.front_door            # replace with indoor camera
+        notify_target: mobile_app_mohamed
+        cooldown_helper: input_datetime.front_door_last_ai
+        cooldown_minutes: 15                          # tidiness needs no rush
+        title: "Room check"
+        prompt: >-
+          You are a helpful home assistant analyzing a single snapshot of a
+          room. Assess the general tidiness and note anything notably out of
+          place; keep it light, practical, and non-judgmental. Describe the
+          overall state (tidy / mostly tidy / cluttered) and mention at most the
+          1-2 most useful tidy-up actions if any. Do not comment on people;
+          focus on objects. If the view is obstructed or too dark, say so and
+          use confidence "low".
+          OUTPUT FORMAT (MANDATORY): at most TWO sentences of plain description,
+          then exactly ONE line of compact JSON on its own line:
+          {"category":"tidiness","score":<1-5>,"confidence":"<low|medium|high>","action":"<notify|log|ignore>"}.
+          score 5=very tidy, 3=average, 1=very cluttered. action="notify" only
+          if score <= 2; "log" for scores 3-5; "ignore" if it cannot be assessed.

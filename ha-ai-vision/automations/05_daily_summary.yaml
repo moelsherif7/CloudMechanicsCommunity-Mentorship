@@ -1,0 +1,79 @@
+# ---------------------------------------------------------------------------
+# Automation 05 — Daily Evening Summary (20:00)
+# Reads today's AI Vision Timeline events and pushes an end-of-day recap.
+# Prompt source of truth (summary role): ../prompts/anomaly.md (Role 2)
+#
+# How it works:
+#   1. At 20:00, fetch today's events from the LLM Vision Timeline calendar.
+#   2. Build a compact digest (counts + recent items).
+#   3. Push the digest to mobile_app. (Optionally pipe through a text LLM —
+#      see the commented `conversation.process` step for a richer summary.)
+#
+# NOTE: the Timeline calendar entity created by LLM Vision is commonly
+# `calendar.llm_vision_timeline`. Verify the exact entity_id in your install
+# (Settings → Devices & Services → LLM Vision) and update below if different.
+# ---------------------------------------------------------------------------
+- id: ai_vision_05_daily_summary
+  alias: "AI Vision 05 — Daily Evening Summary (20:00)"
+  description: >-
+    At 20:00 each day, summarize the day's AI Vision Timeline (packages, people,
+    pets, anomalies) and push an evening recap to mobile_app. Degrades to a
+    "quiet day" message if there were no events.
+  mode: single
+  trigger:
+    - platform: time
+      at: "20:00:00"
+  condition: []
+  action:
+    # ----- 1. Fetch today's Timeline events --------------------------------
+    - service: calendar.get_events
+      continue_on_error: true
+      target:
+        entity_id: calendar.llm_vision_timeline
+      data:
+        start_date_time: "{{ today_at('00:00') }}"
+        end_date_time: "{{ today_at('20:00') }}"
+      response_variable: timeline
+
+    # ----- 2. Build the digest ---------------------------------------------
+    - variables:
+        events: "{{ (timeline['calendar.llm_vision_timeline'].events) if timeline is defined and 'calendar.llm_vision_timeline' in timeline else [] }}"
+        blob: >-
+          {% for e in events %}- {{ as_timestamp(e.start) | timestamp_custom('%H:%M') }}: {{ e.summary }}{% if e.description %} — {{ e.description }}{% endif %}
+          {% endfor %}
+        packages: "{{ events | selectattr('summary','search','(?i)package') | list | count }}"
+        unknown_persons: "{{ events | selectattr('summary','search','(?i)unknown|person') | list | count }}"
+        anomalies: "{{ events | selectattr('summary','search','(?i)anomaly|unusual') | list | count }}"
+        total: "{{ events | count }}"
+
+    # ----- 3a. Optional: richer LLM-written summary -------------------------
+    # Uncomment to route the digest through a text LLM / conversation agent.
+    # Replace `agent_id` with your configured agent (e.g. Google Generative AI).
+    #
+    # - service: conversation.process
+    #   continue_on_error: true
+    #   data:
+    #     agent_id: conversation.google_generative_ai
+    #     text: >-
+    #       Summarize today's home AI-vision timeline in 2-4 short, friendly
+    #       sentences for the homeowner. Lead with packages, unknown persons, or
+    #       anomalies. End with one line of compact JSON:
+    #       {"category":"daily_summary","packages":N,"unknown_persons":N,"anomalies":N}.
+    #       Timeline:
+    #       {{ blob }}
+    #   response_variable: ai_summary
+
+    # ----- 3b. Notify -------------------------------------------------------
+    - service: notify.mobile_app_mohamed
+      data:
+        title: "🏠 Evening summary"
+        message: >-
+          {% if total | int == 0 %}
+          Quiet day at the front door — no notable AI Vision events were logged today.
+          {% else %}
+          Today: {{ packages }} package event(s), {{ unknown_persons }} person event(s), {{ anomalies }} anomaly flag(s) across {{ total }} observations.
+          {{ blob | trim }}
+          {% endif %}
+        data:
+          tag: "ai_vision_daily_summary"
+          group: "ai_vision"

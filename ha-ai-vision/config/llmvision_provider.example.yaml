@@ -1,0 +1,90 @@
+# ---------------------------------------------------------------------------
+# LLM Vision — provider configuration (EXAMPLE / SANITIZED)
+#
+# Copy this file to `config/llmvision_provider.yaml` (gitignored) and/or use it
+# as a reference while configuring the LLM Vision integration in the Home
+# Assistant UI. The integration is configured through Settings → Devices &
+# Services, but the values below map 1:1 to what you enter there.
+#
+# Secrets are referenced via `!secret` and MUST live in your HA secrets.yaml,
+# which is never committed (see ../.gitignore).
+# ---------------------------------------------------------------------------
+
+# Which provider every automation uses. This value is what the helper
+# `input_text.llmvision_provider` should hold. Swapping providers = changing
+# this one value to point at a different configured provider entry.
+#
+# Set up the helper once:
+#   Settings → Devices & Services → Helpers → Create Helper → Text
+#   Name: "LLM Vision Provider", entity_id: input_text.llmvision_provider
+#   Value: the provider id shown by the LLM Vision integration for the entry below.
+active_provider: gemini   # gemini | openai | anthropic | ollama
+
+# ---------------------------------------------------------------------------
+# Provider catalogue
+# Configure ONE as primary; the others are kept here as ready-to-swap presets.
+# In the LLM Vision UI you add each as a separate provider entry; the keys below
+# document the settings you choose.
+# ---------------------------------------------------------------------------
+providers:
+
+  # ----- Primary: Google Gemini 2.0 Flash -----------------------------------
+  gemini:
+    integration: llmvision
+    provider: Google                 # provider type in the LLM Vision UI
+    model: gemini-2.0-flash          # fast + cheap + strong vision
+    api_key: !secret llmvision_gemini_api_key
+    # Optional tuning
+    temperature: 0.2                 # low = consistent, structured output
+    max_tokens: 150                  # short: ≤2 sentences + JSON tag
+    target_width: 1280               # downscale snapshots to control cost
+
+  # ----- Swap option: OpenAI ------------------------------------------------
+  openai:
+    integration: llmvision
+    provider: OpenAI
+    model: gpt-4o-mini               # or gpt-4o for higher accuracy
+    api_key: !secret llmvision_openai_api_key
+    temperature: 0.2
+    max_tokens: 150
+    target_width: 1280
+
+  # ----- Swap option: Anthropic ---------------------------------------------
+  anthropic:
+    integration: llmvision
+    provider: Anthropic
+    model: claude-3-5-sonnet-latest  # strong reasoning on scenes
+    api_key: !secret llmvision_anthropic_api_key
+    temperature: 0.2
+    max_tokens: 150
+    target_width: 1280
+
+  # ----- Swap option: Ollama (local, on-prem, no per-call cost) --------------
+  ollama:
+    integration: llmvision
+    provider: Ollama
+    model: llama3.2-vision           # or llava ; must be a vision-capable model
+    ip_address: 127.0.0.1            # your Ollama host
+    port: 11434
+    # no api_key — local. Images never leave your network (best for residency).
+    temperature: 0.2
+    max_tokens: 150
+    target_width: 1024
+
+# ---------------------------------------------------------------------------
+# Feature flags (enabled for the pilot)
+# ---------------------------------------------------------------------------
+features:
+  timeline: true     # queryable history → "did a package arrive today?"
+  memory: true       # context (known people/pets, baseline scene)
+  # Retention: prune Timeline + snapshots on a schedule (see docs/runbook.md)
+  timeline_retention_days: 30
+
+# ---------------------------------------------------------------------------
+# Shared defaults consumed by script.ai_vision_analyze
+# (kept here for documentation; the script reads the helper, not this file)
+# ---------------------------------------------------------------------------
+defaults:
+  cooldown_minutes: 5          # per-camera minimum gap between AI calls
+  notify_target: notify.mobile_app_mohamed
+  snapshot_path: /config/www/snapshots   # gitignored; cleaned periodically

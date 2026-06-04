@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# Home Assistant AI Vision — ignore rules
+# Never commit secrets, credentials, or runtime state.
+# ---------------------------------------------------------------------------
+
+# Secrets & credentials
+secrets.yaml
+secrets.yml
+*.secret
+*.secrets
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+
+# Real (non-example) provider config — only the *.example.yaml is tracked
+config/llmvision_provider.yaml
+config/*.local.yaml
+
+# Home Assistant runtime / state
+.storage/
+.cloud/
+home-assistant.log*
+home-assistant_v2.db*
+*.db-shm
+*.db-wal
+known_devices.yaml
+ip_bans.yaml
+
+# Snapshots / captured media (can contain people, license plates, etc.)
+snapshots/
+www/snapshots/
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.mkv
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

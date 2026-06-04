@@ -1,0 +1,84 @@
+# ---------------------------------------------------------------------------
+# Lovelace view — AI Vision Timeline
+#
+# Add this as a new view: open your dashboard → Edit → Raw configuration
+# editor, then paste this block under `views:`. Or save as a standalone
+# dashboard. Card stack: live camera, latest snapshot, status, and the
+# queryable Timeline (calendar) plus a logbook fallback.
+#
+# Adjust entity_ids to match your install:
+#   camera.front_door
+#   input_text.llmvision_provider
+#   input_datetime.front_door_last_ai
+#   calendar.llm_vision_timeline   (verify exact id in LLM Vision settings)
+# ---------------------------------------------------------------------------
+title: AI Vision
+path: ai-vision
+icon: mdi:eye-check
+badges: []
+cards:
+  - type: markdown
+    content: >
+      ## 👁️ AI Vision Timeline
+
+      Event-driven camera analysis. Ask the Timeline questions like
+      *"did a package arrive today?"* using the Assist / conversation agent,
+      or scroll the log below.
+
+  # ----- Live camera + latest analyzed snapshot ----------------------------
+  - type: horizontal-stack
+    cards:
+      - type: picture-entity
+        title: Front door (live)
+        entity: camera.front_door
+        camera_view: auto
+        show_state: false
+        show_name: true
+      - type: picture
+        title: Latest analyzed snapshot
+        image: /local/snapshots/front_door_latest.jpg
+
+  # ----- Status row: active provider + last AI run -------------------------
+  - type: entities
+    title: Status
+    show_header_toggle: false
+    entities:
+      - entity: input_text.llmvision_provider
+        name: Active provider (swap point)
+        icon: mdi:swap-horizontal
+      - entity: input_datetime.front_door_last_ai
+        name: Front door — last AI analysis
+        icon: mdi:clock-outline
+      - entity: binary_sensor.front_door_motion
+        name: Front door motion
+        icon: mdi:motion-sensor
+
+  # ----- The Timeline (LLM Vision calendar) --------------------------------
+  - type: calendar
+    title: AI Vision Timeline
+    initial_view: listWeek
+    entities:
+      - calendar.llm_vision_timeline
+
+  # ----- Recent AI observations (logbook fallback) -------------------------
+  - type: logbook
+    title: Recent observations
+    hours_to_show: 24
+    entities:
+      - camera.front_door
+      - binary_sensor.front_door_motion
+      - calendar.llm_vision_timeline
+
+  # ----- Quick natural-language query hint ---------------------------------
+  - type: markdown
+    content: >
+      ### Ask the Timeline
+
+      Use **Assist** (voice or text) with a question such as:
+
+      - *"Did a package arrive today?"*
+      - *"Was there an unknown person at the front door this week?"*
+      - *"When did the cat last come home?"*
+
+      Answers are drawn from the Timeline + Memory written by
+      `script.ai_vision_analyze`.

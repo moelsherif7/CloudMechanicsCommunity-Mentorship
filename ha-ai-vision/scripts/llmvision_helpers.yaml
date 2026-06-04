@@ -1,0 +1,218 @@
+# ---------------------------------------------------------------------------
+# AI Vision — reusable helper script
+#
+# script.ai_vision_analyze
+#   One choke point for every use case: take a snapshot, send it to the active
+#   LLM Vision provider with a use-case prompt, log to the Timeline/Memory, and
+#   notify based on the structured result. On ANY failure it falls back to a
+#   plain motion notification with the snapshot, so you are never blind.
+#
+# How to install:
+#   Merge this file into your scripts. If you use split config:
+#     script: !include_dir_merge_named scripts/
+#   then drop this file in that folder. Otherwise paste the `ai_vision_analyze:`
+#   block under your existing `script:` key.
+#
+# Required helpers (create once — see the block at the bottom of this file):
+#   input_text.llmvision_provider          → active provider id (swap point)
+#   input_datetime.front_door_last_ai      → per-camera cooldown timestamp
+#
+# NOTE: service/field names for the LLM Vision integration
+# (valentinfrlch/ha-llmvision) can change between versions. Field names here
+# follow the common `llmvision.image_analyzer` shape; verify against your
+# installed version in Developer Tools → Actions and adjust if needed.
+# ---------------------------------------------------------------------------
+
+ai_vision_analyze:
+  alias: AI Vision — Snapshot, Analyze, Log & Notify
+  description: >-
+    Reusable pipeline: enforce per-camera cooldown, capture a snapshot, run LLM
+    Vision analysis (Timeline + Memory), then notify based on the structured
+    result. Falls back to a plain motion alert if the AI call fails.
+  mode: queued
+  max: 5
+  icon: mdi:eye-check
+  fields:
+    use_case:
+      description: Short use-case key (package | person | animal | tidiness | anomaly).
+      example: package
+      required: true
+      selector:
+        text:
+    camera_entity:
+      description: Camera entity to snapshot.
+      example: camera.front_door
+      required: true
+      selector:
+        entity:
+          domain: camera
+    prompt:
+      description: Full instruction prompt (from prompts/<use_case>.md).
+      example: "You are a home security vision assistant..."
+      required: true
+      selector:
+        text:
+          multiline: true
+    notify_target:
+      description: Notify service to call (without the `notify.` prefix).
+      example: mobile_app_mohamed
+      required: true
+      selector:
+        text:
+    cooldown_helper:
+      description: input_datetime entity used to enforce the per-camera cooldown.
+      example: input_datetime.front_door_last_ai
+      required: true
+      selector:
+        entity:
+          domain: input_datetime
+    cooldown_minutes:
+      description: Minimum minutes between AI calls for this camera (>= 5).
+      example: 5
+      required: false
+      default: 5
+      selector:
+        number:
+          min: 5
+          max: 60
+          mode: box
+    title:
+      description: Notification title.
+      example: "Front door"
+      required: false
+      default: "AI Vision"
+      selector:
+        text:
+
+  sequence:
+    # ----- 1. Cooldown gate -------------------------------------------------
+    # Skip entirely if we analyzed this camera within the cooldown window.
+    - variables:
+        cooldown_seconds: "{{ (cooldown_minutes | int(5)) * 60 }}"
+        last_run_ts: "{{ states(cooldown_helper) | as_timestamp(0) }}"
+        seconds_since: "{{ now().timestamp() - last_run_ts }}"
+        snapshot_file: "/config/www/snapshots/{{ camera_entity.split('.')[1] }}_latest.jpg"
+        snapshot_url: "/local/snapshots/{{ camera_entity.split('.')[1] }}_latest.jpg"
+        provider_id: "{{ states('input_text.llmvision_provider') }}"
+    - if:
+        - condition: template
+          value_template: "{{ last_run_ts > 0 and seconds_since < cooldown_seconds }}"
+      then:
+        - stop: >-
+            Cooldown active for {{ camera_entity }}
+            ({{ (seconds_since | int) }}s < {{ cooldown_seconds }}s) — skipping AI call.
+
+    # ----- 2. Stamp the cooldown immediately (before the slow AI call) ------
+    # Prevents a motion storm from launching parallel analyses.
+    - service: input_datetime.set_datetime
+      target:
+        entity_id: "{{ cooldown_helper }}"
+      data:
+        timestamp: "{{ now().timestamp() }}"
+
+    # ----- 3. Capture snapshot ----------------------------------------------
+    - service: camera.snapshot
+      continue_on_error: true
+      target:
+        entity_id: "{{ camera_entity }}"
+      data:
+        filename: "{{ snapshot_file }}"
+
+    # ----- 4. Run LLM Vision analysis (Timeline + Memory) -------------------
+    # continue_on_error lets us fall back gracefully if the provider fails.
+    - service: llmvision.image_analyzer
+      continue_on_error: true
+      data:
+        provider: "{{ provider_id }}"
+        message: "{{ prompt }}"
+        image_file: "{{ snapshot_file }}"
+        remember: true            # write to Memory
+        use_memory: true          # supply Memory context to the model
+        generate_title: true
+        max_tokens: 150
+        temperature: 0.2
+      response_variable: ai_result
+
+    # ----- 5. Parse the structured result -----------------------------------
+    - variables:
+        ai_text: "{{ ai_result.response_text | default('') if ai_result is defined else '' }}"
+        # Extract the trailing single-line JSON tag, if present.
+        ai_json: >-
+          {% set m = ai_text | regex_findall('\\{.*\\}') %}
+          {% if m %}{{ m[-1] }}{% else %}{}{% endif %}
+        parsed: >-
+          {% set j = ai_json %}
+          {% if j and j != '{}' %}
+            {{ j | from_json }}
+          {% else %}
+            {}
+          {% endif %}
+        category: "{{ parsed.category | default(use_case) }}"
+        confidence: "{{ parsed.confidence | default('low') }}"
+        action: "{{ parsed.action | default('log') }}"
+        # Human-readable part = text with the JSON tag stripped off.
+        summary: "{{ (ai_text | regex_replace('\\{.*\\}', '') | trim) or 'Motion detected.' }}"
+
+    # ----- 6. Branch: AI succeeded vs. fallback -----------------------------
+    - choose:
+        # 6a. AI returned usable text → act on `action`
+        - conditions:
+            - condition: template
+              value_template: "{{ ai_text | length > 0 }}"
+          sequence:
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ action == 'notify' }}"
+                  sequence:
+                    - service: "notify.{{ notify_target }}"
+                      data:
+                        title: "{{ title }} — {{ category }}"
+                        message: "{{ summary }}"
+                        data:
+                          image: "{{ snapshot_url }}"
+                          tag: "ai_vision_{{ use_case }}"
+              # action == log or ignore → no push; Timeline already has it.
+              default: []
+
+        # 6b. Fallback: AI failed/empty → plain motion notification + snapshot
+      default:
+        - service: "notify.{{ notify_target }}"
+          data:
+            title: "{{ title }} — motion"
+            message: >-
+              Motion detected at {{ camera_entity }} but AI analysis was
+              unavailable. Snapshot attached.
+            data:
+              image: "{{ snapshot_url }}"
+              tag: "ai_vision_fallback"
+        - service: system_log.write
+          data:
+            level: warning
+            logger: ai_vision
+            message: >-
+              LLM Vision analysis failed/empty for {{ camera_entity }}
+              (use_case={{ use_case }}, provider={{ provider_id }}). Sent
+              fallback motion notification.
+
+
+# ---------------------------------------------------------------------------
+# REQUIRED HELPERS — add these to configuration.yaml (or create via the UI:
+# Settings → Devices & Services → Helpers). They are listed here for reference;
+# this section is YAML-commented so it does not load as part of `script:`.
+# ---------------------------------------------------------------------------
+#
+# input_text:
+#   llmvision_provider:
+#     name: LLM Vision Provider
+#     initial: "gemini"          # <-- the ONE place to swap providers
+#     max: 255
+#
+# input_datetime:
+#   front_door_last_ai:
+#     name: Front Door — Last AI Analysis
+#     has_date: true
+#     has_time: true
+#
+# Add one input_datetime per camera you enable (e.g. living_room_last_ai).
+# ---------------------------------------------------------------------------
